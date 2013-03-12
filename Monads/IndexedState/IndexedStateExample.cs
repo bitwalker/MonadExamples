@@ -1,88 +1,39 @@
 using System;
 using System.Net;
 using System.Net.Sockets;
+using System.Text;
+
 using Unit = System.Reactive.Unit;
 
 namespace Monads.IndexedState
 {
-    public abstract class ClientConnection
-    {
-        protected readonly TcpClient _client;
-        protected readonly NetworkStream _stream;
-
-        protected ClientConnection(TcpClient client) { 
-            _client = client;
-            _stream = client.GetStream ();
-        }
-
-        protected ClientConnection(TcpClient client, NetworkStream stream) {
-            _client = client;
-            _stream = stream;
-        }
-    }
-
-    public class OpenConnection : ClientConnection
-    {
-        public OpenConnection(TcpClient client, NetworkStream stream) : base(client, stream) { }
-
-        public ClosedConnection Close()    { return new ClosedConnection(_client, _stream); }
-        public byte[]           GetData()  { 
-            var data      = new byte[4096];
-            var bytesRead = 0;
-
-            try {
-                // blocking operation until client receives message
-                bytesRead = _stream.Read (data, 0, 4096);
-            }
-            catch (Exception ex) {
-                // Swallow it
-            }
-
-            return data;
-        }
-    }
-
-    public class ClosedConnection : ClientConnection
-    {
-        public ClosedConnection(TcpClient client, NetworkStream stream) : base(client, stream) {
-            _client.Close ();
-        }
-    }
-
-    public static class Connections
-    {
-        public static State<ClosedConnection, OpenConnection, Unit> Open() {
-            return State.Modify(c => c.Open());
-        }
-
-        public static State<OpenConnection, OpenConnection, byte[]> GetData() {
-            return (c => Pair.Create(c.GetData(), c));
-        }
-
-        public static State<OpenConnection, ClosedConnection, Unit> Close() {
-            return State.Modify(c => c.Close());
-        }
-
-        public static A RunWithConnection<A>(this State<OpenConnection, ClosedConnection, A> state, TcpClient client)
-        {
-            state.Eval(new OpenConnection(client));
-        }
-
-    }
-
     public class IndexedStateExample
     {
         public static void Main(string[] args) {
-            var client = new TcpClient("localhost", 8080);
-            var data   = ReceiveData(client);
+            var client  = new TcpClient("localhost", 8080);
+            var data    = ReceiveData(client);
+            var message = Encoding.ASCII.GetString(data);
+            Console.WriteLine(message);
         }
 
         public static byte[] ReceiveData(TcpClient client)
         {
+            // By using the Indexed State monad, we can wrap type safety around our operations, this allows
+            // the compiler to act as a catch-all for easy mistakes like opening an open connection, reading
+            // data from a closed connection, etc.
+
+            // In this case, we are attempting to read data from a connection stream:
+
+            // RunWithConnection starts off by creating a ClosedConnection with the provided TcpClient instance
             return (
-                from   open    in Connections.Open()
-                from   data    in Connections.GetData()
-                from   close   in Connections.Close()
+                // Open opens that connection and provides an instance of OpenConnection
+                from o    in Connections.Open()
+                // GetData uses the OpenConnection and retreives the byte[] data from the connection stream
+                from data in Connections.GetData()
+                // Close closes the OpenConnection and provides an instance of ClosedConnection
+                from c    in Connections.Close()
+                // Dispose disposes the ClosedConnection and provides an instance of DisposedConnection
+                from d    in Connections.Dispose()
                 select data
             ).RunWithConnection(client);
         }

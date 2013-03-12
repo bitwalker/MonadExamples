@@ -4,86 +4,95 @@ using Unit = System.Reactive.Unit;
 
 namespace Monads.IndexedState
 {
-    public delegate Pair<TValue, TOutput> State<in TInput, out TOutput, out TValue> (TInput input);
-
-    public static class StateExtensions
+    public static class State
     {
-        public static Pair<TValue, TOutput> Run<TInput, TOutput, TValue> (this State<TInput, TOutput, TValue> state, TInput input)
+        // The Indexed State monad is implemented as a function from initial state to a tuple of the result
+        // and the final state.
+
+        public static IPair<A, O> Run<I, O, A>(this Func<I, IPair<A, O>> state, I input)
         {
-            return state (input);
+            return state(input);
         }
 
-        public static Pair<TValue, TOutput> Eval<TInput, TOutput, TValue> (this State<TInput, TOutput, TValue> state, TInput input)
+        public static A Eval<I, O, A>(this Func<I, IPair<A, O>> state, I input)
         {
-            return state (input).Left;
+            return state(input).Left;
         }
 
-        public static Pair<TValue, TOutput> Exec<TInput, TOutput, TValue> (this State<TInput, TOutput, TValue> state, TInput input)
+        public static O Exec<I, O, A>(this Func<I, IPair<A, O>> state, I input)
         {
-            return state (input).Right;
+            return state(input).Right;
         }
+
+        // The following methods implement the necessary methods to allows us the syntactic sugar
+        // of LINQ query expressions. This is what gives us the monadic behavior.
 
         // unit
-        public static State<S, S, A> ToState<S, A> (this A a)
+        public static Func<I, IPair<A, I>> ToState<I, A>(this A a)
         {
-            return (s => Pair.Create<A, S> (a, s));
+            return (i => Pair<A, I>.Create(a, i));
         }
 
         // map
-        public static State<I, O, B> Select<I, O, A, B> (this State<I, O, A> st, Func<A, B> func)
+        public static Func<I, IPair<B, O>> Select<I, O, A, B>(this Func<I, IPair<A, O>> state, Func<A, B> func)
         {
             return (i =>
-            {
-                var ao = st.Run (i);
-                return Pair.Create<B, O> (func (ao.Left), ao.Right);
-            });
+                {
+                    var ao = state.Run(i);
+                    return Pair<B, O>.Create(func(ao.Left), ao.Right);
+                });
         }
 
         // join
-        public static State<I, O, A> Flatten<I, M, O, A> (this State<I, M, State<M, O, A>> st)
+        public static Func<I, IPair<A, O>> Flatten<I, M, O, A>(this Func<I, IPair<Func<M, IPair<A, O>>, M>>  state)
         {
             return (i =>
-            {
-                var qm = st.Run (i);
-                return qm.Left.Run (qm.Right);
-            });
+                {
+                    var qm = state.Run(i);
+                    return qm.Left.Run(qm.Right);
+                });
         }
 
         // bind
-        public static State<I, O, B> SelectMany<I, M, O, A, B> (this State<I, M, A> st, Func<A, State<M, O, B>> func)
+        public static Func<I, IPair<B, O>> SelectMany<I, M, O, A, B>(this Func<I, IPair<A, M>> state,
+                                                                     Func<A, Func<M, IPair<B, O>>>  func)
         {
             return (i =>
-            {
-                var am = st.Run (i);
-                return func (am.Left).Run (am.Right);
-            });
+                {
+                    var am = state.Run(i);
+                    return func(am.Left).Run(am.Right);
+                });
         }
 
         // bindMap
-        public static State<I, O, C> SelectMany<I, M, O, A, B, C> (this State<I, M, A> st, Func<A, State<M, O, B>> func, Func<A, B, C> selector)
+        public static Func<I, IPair<C, O>> SelectMany<I, M, O, A, B, C>(this Func<I, IPair<A, M>> state,
+                                                                        Func<A, Func<M, IPair<B, O>>>  func,
+                                                                        Func<A, B, C> selector)
         {
             return (i =>
-            {
-                var am = st.Run (i);
-                var a = am.Left;
-                var bo = func (a).Run (am.Right);
-                return Pair.Create<C, O> (selector (a, bo.Left), bo.Right);
-            });
+                {
+                    var am = state.Run(i);
+                    var a = am.Left;
+                    var bo = func(a).Run(am.Right);
+                    return Pair<C, O>.Create(selector(a, bo.Left), bo.Right);
+                });
         }
 
-        public static State<S, S, S> Get<S> ()
+        // State manipulation primitives
+
+        public static Func<I, IPair<I, I>> Get<I>()
         {
-            return (s => Pair.Create<S, S> (s, s));
+            return (i => Pair<I, I>.Create(i, i));
         }
 
-        public static State<I, O, Unit> Put<I, O> (O o)
+        public static Func<I, IPair<Unit, O>> Put<I, O>(O o)
         {
-            return (_ => Pair.Create<Unit, O> (Unit.Default, o));
+            return (_ => Pair<Unit, O>.Create(Unit.Default, o));
         }
-       
-        public static State<I, O, Unit> Modify<I, O> (Func<I, O> func)
+
+        public static Func<I, IPair<Unit, O>> Modify<I, O>(Func<I, O> func)
         {
-            return (i => Pair.Create<Unit, O> (Unit.Default, func (i)));
+            return (i => Pair<Unit, O>.Create(Unit.Default, func(i)));
         }
     }
 }
