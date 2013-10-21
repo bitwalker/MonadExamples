@@ -51,6 +51,9 @@
     <Compile Include="IndexedState\IndexedStateExample.cs" />
     <Compile Include="IndexedState\Pair.cs" />
     <Compile Include="IndexedState\State.cs" />
+    <Compile Include="Maybe\Maybe.cs" />
+    <Compile Include="Maybe\MaybeExample.cs" />
+    <Compile Include="Maybe\MaybeExtensions.cs" />
   </ItemGroup>
   <Import Project="$(MSBuildBinPath)\Microsoft.CSharp.targets" />
   <ItemGroup>
